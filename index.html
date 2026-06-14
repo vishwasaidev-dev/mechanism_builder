@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mechanism Explorer — Artobolevsky</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;display:flex;height:100vh;overflow:hidden}
+#sidebar{width:290px;min-width:290px;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow-y:auto}
+.s-head{padding:16px 18px;border-bottom:1px solid #30363d}
+.s-head h1{font-size:15px;font-weight:700;color:#58a6ff;letter-spacing:.3px}
+.s-head p{font-size:10px;color:#8b949e;margin-top:3px}
+.mech-grid{padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:7px;border-bottom:1px solid #30363d}
+.mc{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:9px 6px;cursor:pointer;text-align:center;transition:all .15s}
+.mc:hover{border-color:#58a6ff55}
+.mc.active{border-color:#58a6ff;background:#1c2a3a}
+.mc-icon{font-size:20px;margin-bottom:4px}
+.mc-name{font-size:9.5px;color:#8b949e;line-height:1.3}
+.mc.active .mc-name{color:#c9d1d9}
+.params{padding:14px;border-bottom:1px solid #30363d}
+.sec-label{font-size:10px;font-weight:600;color:#8b949e;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+.prow{margin-bottom:11px}
+.plabel{display:flex;justify-content:space-between;font-size:11px;color:#c9d1d9;margin-bottom:4px}
+.plabel span:last-child{color:#58a6ff;font-family:monospace;font-size:10px}
+input[type=range]{width:100%;-webkit-appearance:none;height:3px;border-radius:2px;background:#30363d;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#58a6ff;cursor:pointer}
+.info-panel{padding:14px;flex:1}
+.tags{margin-bottom:8px}
+.tag{display:inline-block;background:#1c2a3a;border:1px solid #58a6ff33;color:#58a6ff;font-size:9px;padding:2px 7px;border-radius:10px;margin:2px}
+.desc{font-size:11px;color:#8b949e;line-height:1.65;margin-bottom:10px}
+.kin{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-family:monospace;font-size:10px}
+.kr{display:flex;justify-content:space-between;padding:2px 0;color:#8b949e}
+.kr span:last-child{color:#3fb950}
+#main{flex:1;display:flex;flex-direction:column;position:relative}
+.toolbar{padding:10px 16px;border-bottom:1px solid #30363d;display:flex;align-items:center;justify-content:space-between;background:#161b22;flex-shrink:0}
+.mech-name{font-size:13px;font-weight:600}
+.mech-ref{font-size:10px;color:#8b949e;margin-top:2px}
+.controls{display:flex;align-items:center;gap:8px}
+.btn{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:4px 11px;border-radius:6px;font-size:11px;cursor:pointer;transition:background .1s}
+.btn:hover{background:#30363d}
+.btn.on{background:#1c2a3a;border-color:#58a6ff;color:#58a6ff}
+.spd{display:flex;align-items:center;gap:6px;font-size:10px;color:#8b949e}
+.spd input{width:72px}
+canvas{display:block;width:100%;flex:1}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div class="s-head">
+    <h1>Mechanism Explorer</h1>
+    <p>Artobolevsky · Mechanisms in Modern Engineering Design</p>
+    <a href="builder.html" style="display:inline-block;margin-top:10px;background:#1c2a3a;border:1px solid #58a6ff44;color:#58a6ff;font-size:11px;padding:5px 10px;border-radius:6px;text-decoration:none">⚒ Build Your Own →</a>
+  </div>
+  <div class="mech-grid" id="grid"></div>
+  <div class="params">
+    <div class="sec-label">Parameters</div>
+    <div id="params"></div>
+  </div>
+  <div class="info-panel">
+    <div class="sec-label">About</div>
+    <div class="tags" id="tags"></div>
+    <div class="desc" id="desc"></div>
+    <div class="kin" id="kin"></div>
+  </div>
+</div>
+<div id="main">
+  <div class="toolbar">
+    <div>
+      <div class="mech-name" id="mname"></div>
+      <div class="mech-ref" id="mref"></div>
+    </div>
+    <div class="controls">
+      <div class="spd">Speed: <input type="range" id="spd" min="0.1" max="3" step="0.1" value="1"> <span id="spdv">1.0×</span></div>
+      <button class="btn" id="traceBtn">Trace</button>
+      <button class="btn" id="pauseBtn">Pause</button>
+    </div>
+  </div>
+  <canvas id="cv"></canvas>
+</div>
+
+<script>
+const TAU = Math.PI * 2;
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+// ── ground symbol ──────────────────────────────────────────────────────────
+function ground(ctx, x, y) {
+  ctx.beginPath();
+  ctx.moveTo(x-11,y+8); ctx.lineTo(x+11,y+8);
+  for(let i=0;i<5;i++){ctx.moveTo(x-9+i*5,y+8);ctx.lineTo(x-13+i*5,y+14)}
+  ctx.strokeStyle='#8b949e'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+function joint(ctx, x, y, r, fill, stroke) {
+  ctx.beginPath(); ctx.arc(x,y,r,0,TAU);
+  ctx.fillStyle=fill||'#0d1117'; ctx.fill();
+  ctx.strokeStyle=stroke||'#8b949e'; ctx.lineWidth=2.5; ctx.stroke();
+}
+
+function link(ctx, x1,y1,x2,y2, color, width) {
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+  ctx.strokeStyle=color; ctx.lineWidth=width||3; ctx.stroke();
+}
+
+function drawTrace(ctx, pts) {
+  if(pts.length<2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.strokeStyle='rgba(247,147,26,0.35)'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+function drawGear(ctx,cx,cy,r,angle,N,bodyColor,accentColor){
+  const da=TAU/N,add=r*.22,ded=r*.13,tw=da*.32;
+  ctx.beginPath();
+  for(let i=0;i<N;i++){
+    const a=angle+i*da,rf=r-ded,rt=r+add;
+    if(i===0)ctx.moveTo(cx+rf*Math.cos(a-tw-da*.18),cy+rf*Math.sin(a-tw-da*.18));
+    else ctx.arc(cx,cy,rf,a-tw-da*.18-da,a-tw-da*.18);
+    ctx.lineTo(cx+rt*Math.cos(a-tw),cy+rt*Math.sin(a-tw));
+    ctx.arc(cx,cy,rt,a-tw,a+tw);
+    ctx.lineTo(cx+rf*Math.cos(a+tw+da*.18),cy+rf*Math.sin(a+tw+da*.18));
+  }
+  ctx.closePath();
+  ctx.fillStyle=bodyColor;ctx.fill();
+  ctx.strokeStyle=accentColor;ctx.lineWidth=1.5;ctx.stroke();
+  const ns=Math.max(3,Math.min(7,Math.round(N/5)));
+  for(let i=0;i<ns;i++){
+    const a=angle+(i/ns)*TAU;
+    ctx.beginPath();ctx.moveTo(cx+r*.22*Math.cos(a),cy+r*.22*Math.sin(a));ctx.lineTo(cx+(r-ded)*.78*Math.cos(a),cy+(r-ded)*.78*Math.sin(a));
+    ctx.strokeStyle=accentColor+'44';ctx.lineWidth=r*.08;ctx.stroke();
+  }
+  ctx.beginPath();ctx.arc(cx,cy,r*.17,0,TAU);ctx.fillStyle='#0d1117';ctx.fill();ctx.strokeStyle=accentColor;ctx.lineWidth=2;ctx.stroke();
+}
+
+// ── mechanisms ────────────────────────────────────────────────────────────
+const M = {};
+
+// 1. Four-Bar Linkage
+M.fourbar = {
+  name:'4-Bar Linkage', ref:'Vol. 2 · Class I Lever Mechanisms',
+  tags:['Planar Linkage','Grashof Criterion','Coupler Curve'],
+  desc:'The fundamental building block of machine design. A continuously rotating crank drives an oscillating follower through a coupler. The orange coupler point traces a rich family of algebraic curves — the basis for countless real-world mechanisms.',
+  params:[
+    {id:'r2',label:'Crank (r₂)',min:40,max:120,val:70},
+    {id:'r3',label:'Coupler (r₃)',min:80,max:200,val:150},
+    {id:'r4',label:'Follower (r₄)',min:80,max:180,val:130},
+    {id:'r1',label:'Ground (r₁)',min:80,max:220,val:160},
+    {id:'cp',label:'Coupler point',min:0,max:150,val:80},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2, cy=H/2;
+    const {r1,r2,r3,r4,cp}=p;
+    const O2={x:cx-r1/2,y:cy}, O4={x:cx+r1/2,y:cy};
+    const Ax=O2.x+r2*Math.cos(t), Ay=O2.y+r2*Math.sin(t);
+    const dx=Ax-O4.x, dy=Ay-O4.y, d=Math.hypot(dx,dy);
+    if(d>r3+r4||d<Math.abs(r3-r4)||d<1e-6) return null;
+    const cosA=(d*d+r4*r4-r3*r3)/(2*d*r4);
+    const sinA=Math.sqrt(clamp(1-cosA*cosA,0,1));
+    const a0=Math.atan2(dy,dx);
+    const th4=a0-Math.asin(sinA);
+    const Bx=O4.x+r4*Math.cos(th4), By=O4.y+r4*Math.sin(th4);
+    const th3=Math.atan2(By-Ay,Bx-Ax);
+    const CPx=Ax+cp*Math.cos(th3+Math.PI/4), CPy=Ay+cp*Math.sin(th3+Math.PI/4);
+
+    // ground link
+    ctx.setLineDash([6,4]);
+    link(ctx,O2.x,O2.y,O4.x,O4.y,'#30363d',2);
+    ctx.setLineDash([]);
+
+    if(tr) drawTrace(ctx,pts);
+
+    link(ctx,O2.x,O2.y,Ax,Ay,'#f85149',4);       // crank
+    link(ctx,Ax,Ay,Bx,By,'#58a6ff',3.5);           // coupler
+    link(ctx,O4.x,O4.y,Bx,By,'#3fb950',3.5);       // follower
+    ctx.setLineDash([3,3]);
+    link(ctx,Ax,Ay,CPx,CPy,'rgba(88,166,255,.4)',1.5);
+    ctx.setLineDash([]);
+
+    joint(ctx,O2.x,O2.y,7); ground(ctx,O2.x,O2.y+7);
+    joint(ctx,O4.x,O4.y,7); ground(ctx,O4.x,O4.y+7);
+    joint(ctx,Ax,Ay,6,'#0d1117','#f85149');
+    joint(ctx,Bx,By,6,'#0d1117','#3fb950');
+
+    // coupler point
+    ctx.beginPath(); ctx.arc(CPx,CPy,5,0,TAU); ctx.fillStyle='#f7931a'; ctx.fill();
+
+    return {
+      tp:{x:CPx,y:CPy},
+      kin:{
+        'θ₂ crank': (t*180/Math.PI%360).toFixed(1)+'°',
+        'θ₃ coupler': (th3*180/Math.PI%360).toFixed(1)+'°',
+        'θ₄ follower': (th4*180/Math.PI%360).toFixed(1)+'°',
+      }
+    };
+  }
+};
+
+// 2. Slider-Crank
+M.slidercrank = {
+  name:'Slider-Crank', ref:'Vol. 2 · Class I Lever Mechanisms',
+  tags:['Reciprocating','Piston Engine','Harmonic Content'],
+  desc:'The engine of civilization. Converts uniform rotation to reciprocating linear motion. Parameter λ = r/l determines harmonic distortion — at λ→0 output is pure sinusoidal. Offset e shifts the neutral position. Foundation of all piston engines.',
+  params:[
+    {id:'r',label:'Crank radius (r)',min:40,max:130,val:80},
+    {id:'l',label:'Conn. rod (l)',min:120,max:280,val:200},
+    {id:'e',label:'Offset (e)',min:0,max:60,val:0},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2-80, cy=H/2;
+    const {r,l,e}=p;
+    const O={x:cx,y:cy};
+    const Px=O.x+r*Math.cos(t), Py=O.y+r*Math.sin(t);
+    const sinB=(Py-O.y-e)/l;
+    const cosB=Math.sqrt(clamp(1-sinB*sinB,0,1));
+    const Sx=Px+l*cosB, Sy=O.y+e;
+    const ph=30, pw=52;
+
+    // rails
+    ctx.beginPath();
+    ctx.moveTo(O.x+r-20,Sy-ph/2-5); ctx.lineTo(O.x+r+2*r+l+40,Sy-ph/2-5);
+    ctx.moveTo(O.x+r-20,Sy+ph/2+5); ctx.lineTo(O.x+r+2*r+l+40,Sy+ph/2+5);
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=2; ctx.stroke();
+    for(let i=0;i<9;i++){
+      const hx=O.x+r+2*r+l+30-i*18;
+      ctx.beginPath();
+      ctx.moveTo(hx,Sy-ph/2-5); ctx.lineTo(hx-8,Sy-ph/2-13);
+      ctx.moveTo(hx,Sy+ph/2+5); ctx.lineTo(hx-8,Sy+ph/2+13);
+      ctx.strokeStyle='#21262d'; ctx.lineWidth=1.5; ctx.stroke();
+    }
+
+    if(tr) drawTrace(ctx,pts);
+
+    link(ctx,O.x,O.y,Px,Py,'#f85149',4);
+    link(ctx,Px,Py,Sx,Sy,'#58a6ff',3.5);
+
+    // piston
+    ctx.beginPath(); ctx.rect(Sx,Sy-ph/2,pw,ph);
+    ctx.fillStyle='#21262d'; ctx.fill();
+    ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2; ctx.stroke();
+
+    joint(ctx,O.x,O.y,8); ground(ctx,O.x,O.y+8);
+    joint(ctx,Px,Py,6,'#0d1117','#f85149');
+    joint(ctx,Sx,Sy,5,'#0d1117','#58a6ff');
+
+    const lam=(r/l).toFixed(3);
+    const stroke=2*r;
+    return {
+      tp:{x:Sx+pw/2,y:Sy-35},
+      kin:{
+        'Crank angle':(t*180/Math.PI%360).toFixed(1)+'°',
+        'λ = r/l':lam,
+        'Stroke':(stroke).toFixed(0)+' px',
+        'Piston vel.':(r*(-Math.sin(t)+0.5*r/l*Math.sin(2*t))).toFixed(1)+'·ω',
+      }
+    };
+  }
+};
+
+// 3. Scotch Yoke
+M.scotch = {
+  name:'Scotch Yoke', ref:'Vol. 2 · Class II Lever Mechanisms',
+  tags:['Pure Sinusoidal','Harmonic Motion','Stirling Engine'],
+  desc:'Unlike the slider-crank, the Scotch yoke produces perfect sinusoidal (simple harmonic) motion: y(t) = r·sin(ωt). The crank pin slides freely in the yoke slot. Used in Stirling engines, hydraulic pumps, and anywhere pure harmonic displacement is required.',
+  params:[
+    {id:'r',label:'Crank radius (r)',min:30,max:120,val:80},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2, cy=H/2;
+    const r=p.r;
+    const Px=cx+r*Math.cos(t), Py=cy+r*Math.sin(t);
+    const yw=260, yh=46;
+
+    // Yoke (moves vertically)
+    ctx.beginPath(); ctx.rect(cx-yw/2,Py-yh/2,yw,yh);
+    ctx.fillStyle='#161b22'; ctx.fill();
+    ctx.strokeStyle='#3fb950'; ctx.lineWidth=2; ctx.stroke();
+
+    // Slot cutout
+    ctx.beginPath(); ctx.rect(cx-10,Py-20,20,40);
+    ctx.fillStyle='#0d1117'; ctx.fill();
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=1; ctx.stroke();
+
+    // Guide rails (vertical output)
+    const gx=cx+yw/2+25;
+    ctx.beginPath();
+    ctx.moveTo(gx-14,cy-150); ctx.lineTo(gx-14,cy+150);
+    ctx.moveTo(gx+14,cy-150); ctx.lineTo(gx+14,cy+150);
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=2; ctx.stroke();
+
+    // Reference sine wave
+    ctx.beginPath();
+    for(let i=0;i<=200;i++){
+      const a=(i/200)*TAU;
+      const x=cx-180+(i/200)*360, y=cy+r*Math.sin(a);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle='rgba(63,185,80,.15)'; ctx.lineWidth=1; ctx.stroke();
+
+    if(tr) drawTrace(ctx,pts);
+
+    link(ctx,cx,cy,Px,Py,'#f85149',4);
+    joint(ctx,cx,cy,8); ground(ctx,cx,cy+8);
+    ctx.beginPath(); ctx.arc(Px,Py,7,0,TAU); ctx.fillStyle='#f85149'; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+
+    // velocity
+    const vel=(r*Math.cos(t));
+    const acc=(-r*Math.sin(t));
+    return {
+      tp:{x:cx,y:Py-35},
+      kin:{
+        'Crank angle':(t*180/Math.PI%360).toFixed(1)+'°',
+        'Displacement':(r*Math.sin(t)).toFixed(2)+' px',
+        'Velocity':vel.toFixed(2)+'·ω',
+        'Acceleration':acc.toFixed(2)+'·ω²',
+      }
+    };
+  }
+};
+
+// 4. Geneva Drive
+M.geneva = {
+  name:'Geneva Drive', ref:'Vol. 3 · Intermittent Motion Mechanisms',
+  tags:['Intermittent','Indexing','Dwell'],
+  desc:'Converts continuous rotation into precise intermittent rotation. The driver pin engages one of n slots, advancing the Geneva wheel by 360°/n, then a locking arc holds it stationary. Classic in film projectors, watch movements, and CNC tool changers.',
+  params:[
+    {id:'n',label:'Slots (n)',min:3,max:8,val:4},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const n=Math.round(p.n);
+    const alpha=Math.PI/n;
+    const r=65; // crank (pin) radius
+    const a=r/Math.sin(alpha); // center distance
+    const cx=W/2, cy=H/2;
+    const D={x:cx-a/2,y:cy}; // driver center
+    const G={x:cx+a/2,y:cy}; // geneva center
+    const R=r*Math.cos(alpha)/Math.sin(alpha); // slot radius in Geneva ≈ distance from center to slot tip
+
+    // Actually R (Geneva wheel pitch radius) = a*sin(alpha) = r ... hmm
+    // Slot length from Geneva center = sqrt(a^2 - r^2) = a*cos(alpha)
+    const slotLen = a*Math.cos(alpha)+15;
+    const genevaPitch = a*Math.cos(alpha); // approx Geneva wheel outer radius
+
+    // Geneva angle calculation
+    const phi = t; // driver angle
+    const phiN = ((phi % TAU)+TAU) % TAU;
+
+    // Engagement: pin enters when it's within angle alpha of the slot
+    // Centered at phi=0 (pin closest to Geneva center along line of centers)
+    // Lock range: phi in (alpha, TAU-alpha) -> no engagement
+    // Engage range: phi in [-alpha, alpha] -> i.e. phiN > TAU-alpha OR phiN < alpha
+
+    const fullCycles = Math.floor(phi/TAU);
+    let psiBase = fullCycles*(TAU/n);
+    let psiCur = 0;
+
+    const engaging = phiN < alpha || phiN > TAU-alpha;
+    let phiRel = phiN < alpha ? phiN : phiN - TAU;
+
+    if(engaging){
+      psiCur = Math.atan2(Math.sin(phiRel), a/r - Math.cos(phiRel));
+    } else {
+      const wasEngaging = phiN < Math.PI;
+      psiCur = wasEngaging ? -(TAU/n)/2 : (TAU/n)/2;
+    }
+
+    const genevaAngle = psiBase + psiCur - alpha;
+
+    // Draw Geneva wheel outline
+    ctx.beginPath(); ctx.arc(G.x,G.y,genevaPitch+20,0,TAU);
+    ctx.fillStyle='#161b22'; ctx.fill();
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=2; ctx.stroke();
+
+    // Slots
+    for(let i=0;i<n;i++){
+      const sa=genevaAngle+(TAU/n)*i;
+      ctx.save();
+      ctx.translate(G.x,G.y); ctx.rotate(sa);
+      ctx.beginPath(); ctx.rect(10,-7,slotLen-10,14);
+      ctx.fillStyle='#0d1117'; ctx.fill();
+      ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.restore();
+    }
+
+    // Driver disk
+    ctx.beginPath(); ctx.arc(D.x,D.y,r*0.8,0,TAU);
+    ctx.fillStyle='#1a1f26'; ctx.fill();
+    ctx.strokeStyle='#f85149'; ctx.lineWidth=2; ctx.stroke();
+
+    // Locking arc
+    ctx.beginPath();
+    ctx.arc(D.x,D.y,genevaPitch+20,phi+alpha,phi+TAU-alpha);
+    ctx.strokeStyle='rgba(248,81,73,.5)'; ctx.lineWidth=10; ctx.stroke();
+
+    // Crank arm + pin
+    const Px=D.x+r*Math.cos(phi), Py=D.y+r*Math.sin(phi);
+    link(ctx,D.x,D.y,Px,Py,'#f85149',3);
+    ctx.beginPath(); ctx.arc(Px,Py,7,0,TAU); ctx.fillStyle='#f7931a'; ctx.fill();
+
+    // Centers
+    joint(ctx,D.x,D.y,5,'#8b949e'); ground(ctx,D.x,D.y+5);
+    joint(ctx,G.x,G.y,5,'#3fb950','#3fb950'); ground(ctx,G.x,G.y+5);
+
+    return {
+      tp:null,
+      kin:{
+        'Driver angle':(phi*180/Math.PI%360).toFixed(1)+'°',
+        'Geneva angle':(genevaAngle*180/Math.PI%360).toFixed(1)+'°',
+        'Status':engaging?'⚡ ENGAGING':'🔒 LOCKED',
+        'Dwell ratio':((1-2*alpha/TAU)*100).toFixed(1)+'%',
+      }
+    };
+  }
+};
+
+// 5. Cam & Follower
+M.cam = {
+  name:'Eccentric Cam', ref:'Vol. 4 · Cam Mechanisms',
+  tags:['Cam Profile','Flat Follower','Pressure Angle'],
+  desc:'An eccentric (offset-circle) cam produces approximate SHM in the flat-face follower. The pressure angle, which controls side-thrust force on the follower, varies with cam rotation. Used in valve trains, automated assembly, and weaving machinery.',
+  params:[
+    {id:'e',label:'Eccentricity (e)',min:5,max:90,val:50},
+    {id:'R',label:'Cam radius (R)',min:40,max:110,val:70},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2, cy=H/2+40;
+    const {e,R}=p;
+    const camCx=cx+e*Math.cos(t), camCy=cy+e*Math.sin(t);
+    // Flat follower (vertical), contact at top of cam projected to follower plane (x=cx)
+    // For flat follower: follower y = camCy - sqrt(R^2-(cx-camCx)^2)
+    const dx2=clamp((cx-camCx)/R,-1,1);
+    const followerY=camCy-Math.sqrt(clamp(R*R-(cx-camCx)*(cx-camCx),0,R*R));
+    const fw=36, fh=100;
+
+    // Guide rails
+    ctx.beginPath();
+    ctx.moveTo(cx-fw/2-8,cy-200); ctx.lineTo(cx-fw/2-8,cy+60);
+    ctx.moveTo(cx+fw/2+8,cy-200); ctx.lineTo(cx+fw/2+8,cy+60);
+    ctx.strokeStyle='#21262d'; ctx.lineWidth=8; ctx.stroke();
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=1; ctx.stroke();
+
+    // Cam
+    ctx.beginPath(); ctx.arc(camCx,camCy,R,0,TAU);
+    ctx.fillStyle='#1a1f2e'; ctx.fill();
+    ctx.strokeStyle='#58a6ff'; ctx.lineWidth=3; ctx.stroke();
+
+    // Eccentricity line
+    ctx.setLineDash([4,3]);
+    link(ctx,cx,cy,camCx,camCy,'rgba(248,81,73,.4)',1.5);
+    ctx.setLineDash([]);
+
+    // Follower stem
+    ctx.beginPath(); ctx.rect(cx-fw/2,followerY-fh,fw,fh);
+    ctx.fillStyle='#21262d'; ctx.fill();
+    ctx.strokeStyle='#3fb950'; ctx.lineWidth=2; ctx.stroke();
+
+    // Flat face
+    ctx.beginPath();
+    ctx.moveTo(cx-fw/2-12,followerY); ctx.lineTo(cx+fw/2+12,followerY);
+    ctx.strokeStyle='#3fb950'; ctx.lineWidth=4; ctx.stroke();
+
+    if(tr) drawTrace(ctx,pts);
+
+    // Contact point
+    ctx.beginPath(); ctx.arc(cx,followerY,5,0,TAU); ctx.fillStyle='#f7931a'; ctx.fill();
+
+    // Cam center
+    ctx.beginPath(); ctx.arc(camCx,camCy,4,0,TAU); ctx.fillStyle='#58a6ff'; ctx.fill();
+    joint(ctx,cx,cy,6); ground(ctx,cx,cy+6);
+
+    const lift=(e+e*Math.sin(t-Math.PI/2)+e).toFixed(1);
+    const pa=Math.abs(Math.atan2((cx-camCx),Math.sqrt(clamp(R*R-(cx-camCx)**2,0,R*R)))*180/Math.PI);
+    return {
+      tp:{x:cx+fw/2+20,y:followerY},
+      kin:{
+        'Cam angle':(t*180/Math.PI%360).toFixed(1)+'°',
+        'Lift':(cy-followerY-R+e).toFixed(1)+' px',
+        'Max lift':(2*e).toFixed(0)+' px',
+        'Pressure angle':pa.toFixed(1)+'°',
+      }
+    };
+  }
+};
+
+// 6. Whitworth Quick-Return
+M.whitworth = {
+  name:'Whitworth Quick-Return', ref:'Vol. 2 · Class I Lever Mechanisms',
+  tags:['Quick-Return','Shaper Machine','Asymmetric Stroke'],
+  desc:'A slotted-link mechanism that produces a slow cutting stroke and fast return. The driver crank pin slides in a rotating link pivoted at O₄. The link tip drives a horizontal ram. Cutting/return time ratio > 1 — metal shapers and slotting machines depend on this.',
+  params:[
+    {id:'r',label:'Driver crank (r)',min:30,max:90,val:55},
+    {id:'R',label:'Swinging link (R)',min:120,max:220,val:170},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2-30, cy=H/2+30;
+    const {r,R}=p;
+    const O2={x:cx-r*0.9,y:cy};
+    const O4={x:cx+r*0.9,y:cy};
+    const Px=O2.x+r*Math.cos(t), Py=O2.y+r*Math.sin(t);
+    const angO4P=Math.atan2(Py-O4.y,Px-O4.x);
+    const Bx=O4.x+R*Math.cos(angO4P), By=O4.y+R*Math.sin(angO4P);
+
+    // Ram - connects to B via vertical link, slides horizontally at rY
+    const rY=cy-160;
+    const vLen=Math.hypot(Bx-cx,By-rY);
+    const ramX=Bx;
+
+    // Rail
+    ctx.beginPath();
+    ctx.moveTo(cx-220,rY-14); ctx.lineTo(cx+220,rY-14);
+    ctx.moveTo(cx-220,rY+14); ctx.lineTo(cx+220,rY+14);
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=2; ctx.stroke();
+
+    // Vertical link B→ram
+    ctx.setLineDash([4,3]);
+    link(ctx,Bx,By,ramX,rY,'rgba(88,166,255,.4)',1.5);
+    ctx.setLineDash([]);
+
+    // Swinging link
+    link(ctx,O4.x,O4.y,Bx,By,'#3fb950',4);
+    // Driver crank
+    link(ctx,O2.x,O2.y,Px,Py,'#f85149',4);
+    // Sliding block connection (dashed)
+    ctx.setLineDash([3,2]);
+    link(ctx,Px,Py,O4.x+Math.hypot(Px-O4.x,Py-O4.y)*Math.cos(angO4P),O4.y+Math.hypot(Px-O4.x,Py-O4.y)*Math.sin(angO4P),'rgba(248,81,73,.35)',2);
+    ctx.setLineDash([]);
+
+    if(tr) drawTrace(ctx,pts);
+
+    // Ram
+    ctx.beginPath(); ctx.rect(ramX-35,rY-12,70,24);
+    ctx.fillStyle='#21262d'; ctx.fill();
+    ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2; ctx.stroke();
+
+    joint(ctx,O2.x,O2.y,7); ground(ctx,O2.x,O2.y+7);
+    joint(ctx,O4.x,O4.y,7); ground(ctx,O4.x,O4.y+7);
+    joint(ctx,Px,Py,6,'#0d1117','#f85149');
+    joint(ctx,Bx,By,6,'#0d1117','#3fb950');
+
+    return {
+      tp:{x:ramX,y:rY-25},
+      kin:{
+        'Crank angle':(t*180/Math.PI%360).toFixed(1)+'°',
+        'Link angle':(angO4P*180/Math.PI).toFixed(1)+'°',
+        'Ram X':(ramX-cx).toFixed(1),
+        'B height':(cy-By).toFixed(1),
+      }
+    };
+  }
+};
+
+// 7. Toggle Mechanism
+M.toggle = {
+  name:'Toggle Mechanism', ref:'Vol. 2 · Class III Lever Mechanisms',
+  tags:['Force Amplifier','Mechanical Advantage','Press'],
+  desc:'Near the toggle position (links collinear), mechanical advantage → ∞. A small input force near the singularity generates enormous clamping force. Used in stamping presses, plier jaws, circuit breakers, and injection molding clamps.',
+  params:[
+    {id:'r1',label:'Link 1 (r₁)',min:60,max:140,val:95},
+    {id:'r2',label:'Link 2 (r₂)',min:60,max:140,val:95},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2, cy=H/2;
+    const {r1,r2}=p;
+    const A={x:cx,y:cy};
+    // Input oscillates to bring links toward collinear
+    const th1=Math.PI/2+(Math.PI*0.44)*Math.sin(t);
+    const Bx=A.x+r1*Math.cos(th1), By=A.y+r1*Math.sin(th1);
+    const th2=Math.asin(clamp((Bx-cx)/r2,-1,1));
+    const Cx=cx, Cy=By+r2*Math.cos(th2);
+
+    // Vertical rail
+    ctx.beginPath();
+    ctx.moveTo(cx-16,cy-220); ctx.lineTo(cx-16,cy+80);
+    ctx.moveTo(cx+16,cy-220); ctx.lineTo(cx+16,cy+80);
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=2; ctx.stroke();
+
+    if(tr) drawTrace(ctx,pts);
+
+    link(ctx,A.x,A.y,Bx,By,'#f85149',4);
+    link(ctx,Bx,By,Cx,Cy,'#58a6ff',4);
+
+    // Slider
+    ctx.beginPath(); ctx.rect(Cx-22,Cy-12,44,24);
+    ctx.fillStyle='#21262d'; ctx.fill();
+    ctx.strokeStyle='#3fb950'; ctx.lineWidth=2.5; ctx.stroke();
+
+    joint(ctx,A.x,A.y,7); ground(ctx,A.x,A.y+7);
+    joint(ctx,Bx,By,6,'#0d1117','#f85149');
+    joint(ctx,Cx,Cy,6,'#0d1117','#3fb950');
+
+    const sinTh2=Math.abs(Math.sin(th2));
+    const ma=sinTh2<0.008?'∞':(1/sinTh2).toFixed(1);
+    return {
+      tp:{x:Cx+28,y:Cy},
+      kin:{
+        'Input angle':(th1*180/Math.PI).toFixed(1)+'°',
+        'Output angle':(th2*180/Math.PI).toFixed(1)+'°',
+        'Mech. advantage':ma+'×',
+        'Slider pos':(Cy-cy).toFixed(1)+' px',
+      }
+    };
+  }
+};
+
+// 8. Gear Train
+M.geartrain={
+  name:'Gear Train',vol:'Vol. 3 · Gear Mechanisms',
+  tags:['Spur Gear','Gear Ratio','Idler Gear'],
+  desc:'Three external spur gears in series. An idler reverses rotation direction without changing the overall ratio: ω_out/ω_in = N₁/N₃ regardless of N₂. Increasing output teeth multiplies torque and reduces speed. Module m (tooth size) kept constant — gears only mesh correctly at equal module.',
+  params:[
+    {id:'N1',label:'Driver teeth (N₁)',min:8,max:40,val:16},
+    {id:'N2',label:'Idler teeth (N₂)',min:8,max:50,val:24},
+    {id:'N3',label:'Output teeth (N₃)',min:8,max:50,val:36},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2,cy=H/2,m=8;
+    const r1=p.N1*m/2,r2=p.N2*m/2,r3=p.N3*m/2;
+    const G1={x:cx-r2-r1,y:cy},G2={x:cx,y:cy},G3={x:cx+r2+r3,y:cy};
+    const th1=t,th2=-t*r1/r2,th3=t*r1/r3;
+    ctx.setLineDash([4,4]);
+    link(ctx,G1.x,G1.y,G3.x,G3.y,'#30363d',1);
+    ctx.setLineDash([]);
+    drawGear(ctx,G1.x,G1.y,r1,th1,p.N1,'#1f1520','#f85149');
+    drawGear(ctx,G2.x,G2.y,r2,th2,p.N2,'#151f25','#58a6ff');
+    drawGear(ctx,G3.x,G3.y,r3,th3,p.N3,'#0f1f15','#3fb950');
+    [{x:(G1.x+G2.x)/2,y:cy},{x:(G2.x+G3.x)/2,y:cy}].forEach(pt=>{
+      ctx.beginPath();ctx.arc(pt.x,pt.y,5,0,TAU);ctx.fillStyle='#f7931a';ctx.fill();
+    });
+    [G1,G2,G3].forEach(g=>{ground(ctx,g.x,g.y+6);});
+    const ratio=(p.N3/p.N1).toFixed(2);
+    return{tp:null,kin:{
+      'N₁ driver':p.N1+' teeth',
+      'N₂ idler':p.N2+' teeth',
+      'N₃ output':p.N3+' teeth',
+      'Speed ratio N₃/N₁':ratio+'×',
+      'Output direction':'Same as input',
+      'Torque mult.':ratio+'× (ideal)',
+    }};
+  }
+};
+
+// 9. Dwell Cam (Rise-Dwell-Fall)
+M.dwellcam={
+  name:'Dwell Cam',vol:'Vol. 4 · Cam Mechanisms',
+  tags:['Cycloidal Motion','Rise-Dwell-Fall','Displacement Diagram'],
+  desc:'A precision cam encoding a four-phase motion program: cycloidal rise, high dwell, cycloidal fall, low dwell. Cycloidal motion gives zero velocity and acceleration at phase boundaries — no impact loading. The displacement diagram (lower-left) maps the cam profile directly to follower motion.',
+  params:[
+    {id:'R',label:'Base radius (R)',min:35,max:90,val:58},
+    {id:'lift',label:'Max lift (h)',min:15,max:80,val:44},
+  ],
+  run(ctx,t,p,W,H,tr,pts){
+    const cx=W/2,cy=H/2+35;
+    const{R,lift}=p;
+    function camR(phi){
+      const a=((phi%TAU)+TAU)%TAU,h=Math.PI/2;
+      if(a<h)      return R+lift*(a/h-Math.sin(2*Math.PI*a/h)/(2*Math.PI));
+      if(a<Math.PI) return R+lift;
+      if(a<Math.PI+h) return R+lift*(1-(a-Math.PI)/h+Math.sin(2*Math.PI*(a-Math.PI)/h)/(2*Math.PI));
+      return R;
+    }
+    ctx.beginPath();
+    for(let i=0;i<=360;i++){
+      const phi=(i/360)*TAU,r=camR(phi),wx=cx+r*Math.cos(phi+t),wy=cy+r*Math.sin(phi+t);
+      if(i===0)ctx.moveTo(wx,wy);else ctx.lineTo(wx,wy);
+    }
+    ctx.closePath();ctx.fillStyle='#1a1f2e';ctx.fill();ctx.strokeStyle='#58a6ff';ctx.lineWidth=2.5;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+camR(0)*.55*Math.cos(t),cy+camR(0)*.55*Math.sin(t));
+    ctx.strokeStyle='rgba(248,81,73,.5)';ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,5,0,TAU);ctx.fillStyle='#58a6ff';ctx.fill();
+    const fY=cy-camR(Math.PI/2-t),fw=32;
+    ctx.beginPath();ctx.moveTo(cx-fw/2-8,cy-R-lift-22);ctx.lineTo(cx-fw/2-8,cy+12);ctx.moveTo(cx+fw/2+8,cy-R-lift-22);ctx.lineTo(cx+fw/2+8,cy+12);
+    ctx.strokeStyle='#21262d';ctx.lineWidth=8;ctx.stroke();ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.stroke();
+    ctx.beginPath();ctx.rect(cx-fw/2,fY-70,fw,70);ctx.fillStyle='#21262d';ctx.fill();ctx.strokeStyle='#3fb950';ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-fw/2-13,fY);ctx.lineTo(cx+fw/2+13,fY);ctx.strokeStyle='#3fb950';ctx.lineWidth=4;ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,fY,5,0,TAU);ctx.fillStyle='#f7931a';ctx.fill();
+    if(tr) drawTrace(ctx,pts);
+    const dw=118,dh=52,ddx=10,ddy=cy-R-lift-78;
+    ctx.fillStyle='#0a0d12';ctx.fillRect(ddx,ddy,dw,dh);
+    ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.strokeRect(ddx,ddy,dw,dh);
+    ctx.beginPath();
+    for(let i=0;i<=200;i++){
+      const phi=(i/200)*TAU,y2=ddy+dh*.9-(camR(phi)-R)/lift*dh*.8,x2=ddx+(i/200)*dw;
+      if(i===0)ctx.moveTo(x2,y2);else ctx.lineTo(x2,y2);
+    }
+    ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.stroke();
+    const tN=((t%TAU)+TAU)%TAU;
+    ctx.beginPath();ctx.moveTo(ddx+tN/TAU*dw,ddy);ctx.lineTo(ddx+tN/TAU*dw,ddy+dh);ctx.strokeStyle='#f85149';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='#555';ctx.font='8px monospace';ctx.fillText('displacement',ddx+2,ddy-2);
+    joint(ctx,cx,cy,6);ground(ctx,cx,cy+6);
+    const zone=tN<Math.PI/2?'Rise (cycloidal)':tN<Math.PI?'High dwell':tN<3*Math.PI/2?'Fall (cycloidal)':'Low dwell';
+    return{tp:{x:cx+fw/2+20,y:fY},kin:{
+      'Cam angle':(t*180/Math.PI%360).toFixed(1)+'°',
+      'Lift':(camR(Math.PI/2-t)-R).toFixed(1)+' px',
+      'Phase':zone,
+      'Max lift':lift+' px',
+    }};
+  }
+};
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+const cv=document.getElementById('cv');
+const ctx2=cv.getContext('2d');
+let cur='fourbar', params={}, t=0, spd=1, paused=false, trace=false, tpts=[], lt=null;
+
+function resize(){
+  const r=cv.parentElement.getBoundingClientRect();
+  cv.width=r.width; cv.height=r.height;
+}
+
+function grid(ctx,W,H){
+  const g=30;
+  ctx.beginPath();
+  for(let x=0;x<W;x+=g){ctx.moveTo(x,0);ctx.lineTo(x,H)}
+  for(let y=0;y<H;y+=g){ctx.moveTo(0,y);ctx.lineTo(W,y)}
+  ctx.strokeStyle='rgba(255,255,255,.04)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.1)';
+  for(let x=0;x<W;x+=g) for(let y=0;y<H;y+=g){
+    ctx.beginPath();ctx.arc(x,y,.8,0,TAU);ctx.fill();
+  }
+}
+
+function buildGrid(){
+  const icons={fourbar:'⬡',slidercrank:'⚙',scotch:'↕',geneva:'⟳',cam:'◕',whitworth:'↩',toggle:'⊕',geartrain:'⚙',dwellcam:'◎'};
+  const el=document.getElementById('grid'); el.innerHTML='';
+  Object.keys(M).forEach(k=>{
+    const d=document.createElement('div'); d.className='mc'+(k===cur?' active':'');
+    d.dataset.k=k;
+    d.innerHTML=`<div class="mc-icon">${icons[k]}</div><div class="mc-name">${M[k].name}</div>`;
+    d.onclick=()=>select(k);
+    el.appendChild(d);
+  });
+}
+
+function buildParams(){
+  const m=M[cur]; params={};
+  const el=document.getElementById('params'); el.innerHTML='';
+  m.params.forEach(p=>{
+    params[p.id]=p.val;
+    const r=document.createElement('div'); r.className='prow';
+    r.innerHTML=`<div class="plabel"><span>${p.label}</span><span id="v_${p.id}">${p.val}</span></div>
+      <input type="range" min="${p.min}" max="${p.max}" value="${p.val}" id="s_${p.id}">`;
+    el.appendChild(r);
+    document.getElementById('s_'+p.id).oninput=e=>{
+      params[p.id]=+e.target.value;
+      document.getElementById('v_'+p.id).textContent=e.target.value;
+      tpts=[];
+    };
+  });
+}
+
+function select(k){
+  cur=k; tpts=[];
+  document.querySelectorAll('.mc').forEach(c=>c.classList.toggle('active',c.dataset.k===k));
+  const m=M[k];
+  document.getElementById('mname').textContent=m.name;
+  document.getElementById('mref').textContent=m.ref;
+  document.getElementById('tags').innerHTML=m.tags.map(t=>`<span class="tag">${t}</span>`).join('');
+  document.getElementById('desc').textContent=m.desc;
+  buildParams();
+}
+
+function frame(ts){
+  if(!lt) lt=ts;
+  const dt=Math.min((ts-lt)/1000,.05); lt=ts;
+  if(!paused) t+=dt*spd*1.2;
+
+  const W=cv.width, H=cv.height;
+  ctx2.clearRect(0,0,W,H);
+  grid(ctx2,W,H);
+
+  const res=M[cur].run(ctx2,t,params,W,H,trace,tpts);
+  if(res){
+    if(trace&&res.tp){tpts.push({...res.tp});if(tpts.length>900)tpts.shift();}
+    if(res.kin){
+      document.getElementById('kin').innerHTML=
+        Object.entries(res.kin).map(([k,v])=>`<div class="kr"><span>${k}</span><span>${v}</span></div>`).join('');
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('pauseBtn').onclick=function(){
+  paused=!paused; lt=null;
+  this.textContent=paused?'Play':'Pause'; this.classList.toggle('on',paused);
+};
+document.getElementById('traceBtn').onclick=function(){
+  trace=!trace; tpts=[];
+  this.classList.toggle('on',trace);
+};
+document.getElementById('spd').oninput=function(){
+  spd=+this.value; document.getElementById('spdv').textContent=spd.toFixed(1)+'×';
+};
+
+window.addEventListener('resize',resize);
+resize(); buildGrid(); select('fourbar'); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
