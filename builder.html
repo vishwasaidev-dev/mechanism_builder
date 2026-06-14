@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mechanism Builder</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#hdr{background:#161b22;border-bottom:1px solid #30363d;padding:9px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap}
+#hdr a{color:#58a6ff;text-decoration:none;font-size:12px}
+#hdr a:hover{text-decoration:underline}
+#hdr h1{font-size:13px;font-weight:700}
+.sep{width:1px;height:18px;background:#30363d;flex-shrink:0}
+.tb{display:flex;gap:4px;flex-wrap:wrap}
+.btn{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:4px 9px;border-radius:5px;font-size:11px;cursor:pointer;transition:all .1s;white-space:nowrap}
+.btn:hover{background:#30363d}
+.btn.on{background:#1c2a3a;border-color:#58a6ff;color:#58a6ff}
+.btn.red{color:#f85149;border-color:#f8514944}
+.btn.red:hover{background:#2d1a1a}
+.btn.green{background:#1a3a1a;border-color:#3fb950;color:#3fb950}
+.btn.green:hover{background:#1f4a1f}
+kbd{display:inline-block;background:#30363d;border-radius:3px;padding:1px 4px;font-size:9px;font-family:monospace;color:#8b949e;margin-left:2px}
+#ws{flex:1;display:flex;overflow:hidden}
+canvas{display:block;cursor:crosshair}
+#panel{width:210px;min-width:210px;background:#161b22;border-left:1px solid #30363d;padding:12px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;font-size:11px}
+.ph{font-size:9px;font-weight:600;color:#8b949e;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+.dof-box{text-align:center;padding:10px 8px;border-radius:7px;border:2px solid #30363d;transition:border-color .2s,background .2s}
+.dof-box.ok{border-color:#3fb950;background:#0a1f0a}
+.dof-box.over{border-color:#f85149;background:#1f0a0a}
+.dof-box.under{border-color:#d29922;background:#1f1700}
+.dof-n{font-size:30px;font-weight:700;font-family:monospace}
+.dof-l{font-size:9px;color:#8b949e;margin-top:1px}
+.dof-s{font-size:10px;margin-top:3px}
+.hint{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:8px;color:#8b949e;line-height:1.6}
+.hint b{color:#c9d1d9}
+.jlist{font-family:monospace;font-size:9.5px;color:#8b949e}
+.jr{padding:2px 0;display:flex;gap:5px;align-items:center}
+</style>
+</head>
+<body>
+<div id="hdr">
+  <a href="index.html">← Explorer</a>
+  <div class="sep"></div>
+  <h1>Mechanism Builder</h1>
+  <div class="sep"></div>
+  <div class="tb" id="tools">
+    <button class="btn" id="t-ground" onclick="T('ground')">⬛ Ground<kbd>G</kbd></button>
+    <button class="btn" id="t-pin"    onclick="T('pin')">○ Pin<kbd>P</kbd></button>
+    <button class="btn" id="t-slider" onclick="T('slider')">↔ Slider<kbd>S</kbd></button>
+    <button class="btn" id="t-link"   onclick="T('link')">— Link<kbd>L</kbd></button>
+    <button class="btn" id="t-drive"  onclick="T('drive')">⟳ Drive<kbd>D</kbd></button>
+    <button class="btn" id="t-invert" onclick="T('invert')">▦ Invert<kbd>I</kbd></button>
+    <button class="btn" id="t-move"   onclick="T('move')">✥ Move<kbd>M</kbd></button>
+    <button class="btn red" id="t-delete" onclick="T('delete')">✕ Del<kbd>X</kbd></button>
+    <div class="sep"></div>
+    <button class="btn red" onclick="clearAll()">Clear</button>
+  </div>
+  <div class="sep"></div>
+  <div class="tb">
+    <span style="font-size:10px;color:#8b949e">Gears:</span>
+    <button class="btn" id="t-gear" onclick="T('gear')">⚙ Gear<kbd>R</kbd></button>
+    <button class="btn" id="t-mesh" onclick="T('mesh')">⟷ Mesh<kbd>E</kbd></button>
+  </div>
+  <div class="sep"></div>
+  <div class="tb">
+    <span style="font-size:10px;color:#8b949e">Examples:</span>
+    <button class="btn" onclick="preset('fourbar')">4-Bar</button>
+    <button class="btn" onclick="preset('slider')">Slider-Crank</button>
+    <button class="btn" onclick="preset('watt')">Watt</button>
+    <button class="btn" onclick="preset('cheby')">Chebyshev</button>
+  </div>
+</div>
+
+<div id="ws">
+  <canvas id="cv"></canvas>
+  <div id="panel">
+    <div>
+      <div class="ph">Degrees of Freedom</div>
+      <div class="dof-box" id="dbox">
+        <div class="dof-n" id="dn">—</div>
+        <div class="dof-l">Grübler formula</div>
+        <div class="dof-s" id="ds" style="color:#8b949e">Add joints &amp; links</div>
+      </div>
+    </div>
+    <div>
+      <div class="ph">Instructions</div>
+      <div class="hint" id="hint">Select a tool or press a key. Start with ground pivots (G), then pins (P), connect with links (L).</div>
+    </div>
+    <div>
+      <div class="ph">Animation</div>
+      <button class="btn" id="animBtn" onclick="toggleAnim()" style="width:100%;padding:6px;text-align:center">▶ Animate<kbd>Space</kbd></button>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:#8b949e">
+        Speed: <input type="range" id="spd" min="0.2" max="3" step="0.1" value="1" style="flex:1">
+        <span id="spdv">1.0×</span>
+      </div>
+      <button class="btn" id="traceBtn" onclick="toggleTrace()" style="margin-top:6px;width:100%">Trace (dbl-click joint)</button>
+    </div>
+    <div>
+      <div class="ph">Joints <span id="jct" style="font-weight:400"></span></div>
+      <div class="jlist" id="jlist"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TAU = Math.PI*2;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+// ── resize ────────────────────────────────────────────────────────────────
+function resize(){
+  const ws=document.getElementById('ws');
+  const panel=document.getElementById('panel');
+  cv.width=ws.clientWidth-panel.offsetWidth;
+  cv.height=ws.clientHeight;
+}
+window.addEventListener('resize',resize); resize();
+
+// ── state ────────────────────────────────────────────────────────────────
+let J=[],L=[],drv=null; // joints, links, driver {groundId,pinId,radius}
+let gears=[],meshes=[]; // {id,jointId,r,angle}, {id,a,b}
+let animAngle=0,animPaused=true,animSpd=1;
+let traceOn=false,traceJid=null,tracePts=[];
+let lt=null,nid=1;
+let tool='pin',lkStart=null,meshStart=null,dragging=null,mx=0,my=0,hov=null,hovGear=null;
+
+// ── helpers ───────────────────────────────────────────────────────────────
+const byId=id=>J.find(j=>j.id===id);
+const dist=(a,b)=>Math.hypot(b.x-a.x,b.y-a.y);
+
+function addJ(type,x,y){
+  const j={id:nid++,type,x,y,ox:x,oy:y};
+  J.push(j); updatePanel(); return j;
+}
+function addL(a,b){
+  if(a===b) return;
+  if(L.find(l=>(l.a===a&&l.b===b)||(l.a===b&&l.b===a))) return;
+  const ja=byId(a),jb=byId(b);
+  if(!ja||!jb) return;
+  const len=dist(ja,jb);
+  if(len<4) return;
+  L.push({id:nid++,a,b,len}); updatePanel();
+}
+function setDrv(linkId){
+  const lk=L.find(l=>l.id===linkId); if(!lk) return;
+  const ja=byId(lk.a),jb=byId(lk.b); if(!ja||!jb) return;
+  const g=ja.type==='ground'?ja:(jb.type==='ground'?jb:null);
+  if(!g){alert('Drive link must touch a ground pivot.');return;}
+  const p=g===ja?jb:ja;
+  drv={groundId:g.id,pinId:p.id,radius:dist(g,p)};
+  animAngle=Math.atan2(p.y-g.y,p.x-g.x);
+  tracePts=[]; updatePanel();
+}
+// ── inversion ────────────────────────────────────────────────────────────
+function invertLink(linkId){
+  const lk=L.find(l=>l.id===linkId); if(!lk) return;
+  const newGnd=new Set([lk.a,lk.b]);
+  const curGnds=J.filter(j=>j.type==='ground');
+
+  // The distance between two ground joints is implicitly maintained while both are fixed.
+  // As soon as at least one leaves ground and becomes a pin, that constraint vanishes —
+  // so we materialise it as an explicit link BEFORE releasing anything.
+  for(let i=0;i<curGnds.length;i++){
+    for(let k=i+1;k<curGnds.length;k++){
+      const ga=curGnds[i], gb=curGnds[k];
+      if(newGnd.has(ga.id)&&newGnd.has(gb.id)) continue; // both stay ground — still implicit
+      if(L.find(l=>(l.a===ga.id&&l.b===gb.id)||(l.a===gb.id&&l.b===ga.id))) continue; // explicit link already exists
+      const len=dist(ga,gb);
+      if(len>4) L.push({id:nid++,a:ga.id,b:gb.id,len});
+    }
+  }
+
+  // Now swap ground ↔ pin
+  for(const j of J){
+    if(newGnd.has(j.id)){ j.type='ground'; j.ox=j.x; j.oy=j.y; }
+    else if(j.type==='ground'){ j.type='pin'; }
+  }
+  drv=null; tracePts=[]; updatePanel();
+}
+
+// ── gear helpers ──────────────────────────────────────────────────────────
+function hitGear(x,y){
+  for(const g of gears){const j=byId(g.jointId);if(j&&Math.hypot(x-j.x,y-j.y)<g.r+12)return g;}
+  return null;
+}
+
+function drawGearShape(ctx,cx,cy,r,angle,accentColor,hovered){
+  const N=Math.max(6,Math.round(r/5.5));
+  const da=TAU/N,add=r*.22,ded=r*.13,tw=da*.32;
+  ctx.beginPath();
+  for(let i=0;i<N;i++){
+    const a=angle+i*da,rf=r-ded,rt=r+add;
+    if(i===0)ctx.moveTo(cx+rf*Math.cos(a-tw-da*.18),cy+rf*Math.sin(a-tw-da*.18));
+    else ctx.arc(cx,cy,rf,a-tw-da*.18-da,a-tw-da*.18);
+    ctx.lineTo(cx+rt*Math.cos(a-tw),cy+rt*Math.sin(a-tw));
+    ctx.arc(cx,cy,rt,a-tw,a+tw);
+    ctx.lineTo(cx+rf*Math.cos(a+tw+da*.18),cy+rf*Math.sin(a+tw+da*.18));
+  }
+  ctx.closePath();
+  ctx.fillStyle='#161b22';ctx.fill();
+  ctx.strokeStyle=hovered?'#58a6ff':accentColor;ctx.lineWidth=hovered?2.5:1.5;ctx.stroke();
+  // spokes
+  const ns=Math.max(3,Math.min(6,Math.round(N/5)));
+  for(let i=0;i<ns;i++){
+    const a=angle+(i/ns)*TAU;
+    ctx.beginPath();ctx.moveTo(cx+r*.2*Math.cos(a),cy+r*.2*Math.sin(a));ctx.lineTo(cx+(r-ded)*.75*Math.cos(a),cy+(r-ded)*.75*Math.sin(a));
+    ctx.strokeStyle=accentColor+'55';ctx.lineWidth=r*.07;ctx.stroke();
+  }
+  ctx.beginPath();ctx.arc(cx,cy,r*.17,0,TAU);ctx.fillStyle='#0d1117';ctx.fill();ctx.strokeStyle=accentColor;ctx.lineWidth=2;ctx.stroke();
+  // radius label
+  ctx.fillStyle='#555';ctx.font='9px monospace';ctx.fillText('r='+r.toFixed(0),cx+4,cy+3);
+}
+
+// mousewheel to resize gear
+cv.addEventListener('wheel',e=>{
+  if(tool!=='gear') return;
+  const r=cv.getBoundingClientRect(),hg=hitGear(e.clientX-r.left,e.clientY-r.top);
+  if(hg){hg.r=Math.max(20,Math.min(160,hg.r-e.deltaY*.15));updatePanel();}
+  e.preventDefault();},{passive:false});
+
+function clearAll(){
+  J=[];L=[];drv=null;gears=[];meshes=[];meshStart=null;tracePts=[];traceJid=null;traceOn=false;
+  animPaused=true;animAngle=0;lkStart=null;dragging=null;
+  document.getElementById('animBtn').textContent='▶ Animate';
+  document.getElementById('animBtn').classList.remove('green');
+  document.getElementById('traceBtn').classList.remove('on');
+  updatePanel();
+}
+
+// ── DOF ───────────────────────────────────────────────────────────────────
+function dof(){
+  const pins=J.filter(j=>j.type==='pin').length;
+  const sliders=J.filter(j=>j.type==='slider').length;
+  // Links where BOTH endpoints are ground are the frame link — they don't constrain
+  // any moving joint, so they must be excluded (otherwise inversions show as overconstrained).
+  const active=L.filter(l=>{const a=byId(l.a),b=byId(l.b);return!(a?.type==='ground'&&b?.type==='ground');}).length;
+  return 2*pins+sliders-active-(drv?1:0);
+}
+
+// ── panel ─────────────────────────────────────────────────────────────────
+function updatePanel(){
+  const d=dof();
+  const box=document.getElementById('dbox');
+  const dn=document.getElementById('dn');
+  const ds=document.getElementById('ds');
+  dn.textContent=J.length?d:'—';
+  box.className='dof-box';
+  if(drv?.gearMode){box.classList.add('ok');dn.textContent='⚙';ds.textContent='✓ Gear driver set — animate!';ds.style.color='#3fb950';}
+  else if(!J.length){ds.textContent='Add joints & links';ds.style.color='#8b949e';}
+  else if(d===0&&drv){box.classList.add('ok');ds.textContent='✓ Ready to animate';ds.style.color='#3fb950';}
+  else if(d<0){box.classList.add('over');ds.textContent='Overconstrained';ds.style.color='#f85149';}
+  else{box.classList.add('under');ds.textContent=d===0?'Set a driver link or gear':'Add more constraints';ds.style.color='#d29922';}
+  document.getElementById('jct').textContent=`(${J.length})`;
+  document.getElementById('jlist').innerHTML=J.map(j=>`
+    <div class="jr">
+      <span style="color:${j.type==='ground'?'#8b949e':j.id===drv?.pinId?'#f7931a':'#58a6ff'}">${j.type==='ground'?'▲':j.type==='slider'?'▬':'●'}</span>
+      <span>#${j.id}</span>
+      <span style="color:#555">(${j.x.toFixed(0)},${j.y.toFixed(0)})</span>
+      ${j.id===drv?.pinId?'<span style="color:#f7931a">drv</span>':''}
+      ${j.id===traceJid?'<span style="color:#f7931a">tr</span>':''}
+    </div>`).join('');
+}
+
+const HINTS={
+  ground:'<b>Ground pivot</b> — click to place a fixed pivot (frame). Use as crank centre or fixed follower pin.',
+  pin:'<b>Pin joint</b> — click to place a moving revolute joint. Connect with links to constrain it.',
+  slider:'<b>Slider</b> — moves horizontally only. Connect a link for slider-crank output.',
+  link:'<b>Link</b> — click joint A then joint B to create a rigid link. Click a joint then empty space to create joint+link.',
+  drive:'<b>Drive</b> — click a <b>link</b> touching a ground pivot, or click a <b>gear</b>. If a gear shares its pivot with a link, the link mechanism and gear train both animate together.',
+  invert:'<b>Invert</b> — click any link to make it the <b>ground (frame)</b>. Its endpoints freeze; previously-fixed joints release as pins. Tests all four inversions of a 4-bar without rebuilding.',
+  move:'<b>Move</b> — drag any joint. Link lengths update automatically.',
+  delete:'<b>Delete</b> — click a joint or link to remove it.',
+  gear:'<b>Gear</b> — click a joint to attach a gear there. Click empty space to create ground + gear. Scroll wheel to resize.',
+  mesh:'<b>Mesh</b> — click gear A then gear B to link them. Angles propagate from the driver gear automatically.',
+};
+function T(t){
+  tool=t; lkStart=null;
+  document.querySelectorAll('.btn[id^="t-"]').forEach(b=>b.classList.remove('on'));
+  const el=document.getElementById('t-'+t); if(el) el.classList.add('on');
+  document.getElementById('hint').innerHTML=HINTS[t]||'';
+  cv.style.cursor=t==='move'?'grab':'crosshair';
+}
+
+// ── solver ────────────────────────────────────────────────────────────────
+function solve(){
+  if(!drv) return false;
+  if(drv.gearMode) return true; // pure gear train — no link constraints to solve
+  const g=byId(drv.groundId),p=byId(drv.pinId);
+  if(!g||!p) return false;
+  p.driven=true;
+  p.x=g.x+drv.radius*Math.cos(animAngle);
+  p.y=g.y+drv.radius*Math.sin(animAngle);
+  for(let i=0;i<80;i++){
+    for(const lk of L){
+      const a=byId(lk.a),b=byId(lk.b); if(!a||!b) continue;
+      const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy); if(d<1e-9) continue;
+      const e=(d-lk.len)/d;
+      const wa=(a.type==='ground'||a.driven)?0:0.5;
+      const wb=(b.type==='ground'||b.driven)?0:0.5;
+      if(wa){a.x+=wa*e*dx;a.y+=wa*e*dy;}
+      if(wb){b.x-=wb*e*dx;b.y-=wb*e*dy;}
+    }
+    for(const j of J){
+      if(j.type==='ground'){j.x=j.ox;j.y=j.oy;}
+      if(j.type==='slider'){j.y=j.oy;}
+    }
+    p.x=g.x+drv.radius*Math.cos(animAngle);
+    p.y=g.y+drv.radius*Math.sin(animAngle);
+  }
+  p.driven=false;
+  let res=0;
+  for(const lk of L){const a=byId(lk.a),b=byId(lk.b);if(a&&b)res+=Math.abs(dist(a,b)-lk.len);}
+  return res<L.length*3;
+}
+
+// ── renderer ──────────────────────────────────────────────────────────────
+function grid(){
+  const W=cv.width,H=cv.height,g=30;
+  ctx.beginPath();
+  for(let x=0;x<W;x+=g){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for(let y=0;y<H;y+=g){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.1)';
+  for(let x=0;x<W;x+=g)for(let y=0;y<H;y+=g){ctx.beginPath();ctx.arc(x,y,.8,0,TAU);ctx.fill();}
+}
+function gnd(x,y){
+  ctx.beginPath();
+  ctx.moveTo(x-10,y+7);ctx.lineTo(x+10,y+7);
+  for(let i=0;i<5;i++){const gx=x-8+i*4;ctx.moveTo(gx,y+7);ctx.lineTo(gx-3,y+12);}
+  ctx.strokeStyle='#8b949e';ctx.lineWidth=1.5;ctx.stroke();
+}
+
+function render(){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  grid();
+
+  // trace
+  if(traceOn&&tracePts.length>1){
+    ctx.beginPath();ctx.moveTo(tracePts[0].x,tracePts[0].y);
+    for(let i=1;i<tracePts.length;i++) ctx.lineTo(tracePts[i].x,tracePts[i].y);
+    ctx.strokeStyle='rgba(247,147,26,.4)';ctx.lineWidth=1.5;ctx.stroke();
+  }
+
+  // gear meshes
+  for(const mesh of meshes){
+    const ga=gears.find(g=>g.id===mesh.a),gb=gears.find(g=>g.id===mesh.b);if(!ga||!gb) continue;
+    const ja=byId(ga.jointId),jb=byId(gb.jointId);if(!ja||!jb) continue;
+    ctx.beginPath();ctx.moveTo(ja.x,ja.y);ctx.lineTo(jb.x,jb.y);
+    ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([]);
+    const mpx=(ja.x+jb.x)/2,mpy=(ja.y+jb.y)/2;
+    ctx.beginPath();ctx.arc(mpx,mpy,4,0,TAU);ctx.fillStyle='#f7931a';ctx.fill();
+    const ratio=(ga.r/gb.r).toFixed(2);
+    ctx.fillStyle='#f7931a';ctx.font='9px monospace';ctx.fillText(ratio+'×',mpx+6,mpy-4);
+  }
+
+  // gears (drawn before links so links appear on top at joints)
+  for(const g of gears){
+    const j=byId(g.jointId);if(!j) continue;
+    const isDrv=drv&&j.id===drv.groundId;
+    const isH=j.id===hovGear?.jointId;
+    drawGearShape(ctx,j.x,j.y,g.r,g.angle,isDrv?'#f85149':'#58a6ff',isH);
+  }
+
+  // links
+  for(const lk of L){
+    const a=byId(lk.a),b=byId(lk.b); if(!a||!b) continue;
+    const isDrv=drv&&((lk.a===drv.groundId&&lk.b===drv.pinId)||(lk.b===drv.groundId&&lk.a===drv.pinId));
+    const isGnd=a.type==='ground'&&b.type==='ground';
+    if(isGnd){
+      // Ground link (frame) — thick grey + dashed overlay, like engineering convention
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle='#30363d';ctx.lineWidth=6;ctx.stroke();
+      ctx.setLineDash([10,5]);ctx.strokeStyle='#8b949e55';ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);
+      // Perpendicular hatching marks every 18px along the link
+      const len=Math.hypot(b.x-a.x,b.y-a.y),ux=(b.x-a.x)/len,uy=(b.y-a.y)/len;
+      for(let t=10;t<len-8;t+=18){
+        ctx.beginPath();
+        ctx.moveTo(a.x+ux*t+uy*6,a.y+uy*t-ux*6);
+        ctx.lineTo(a.x+ux*t-uy*3,a.y+uy*t+ux*3);
+        ctx.strokeStyle='#8b949e55';ctx.lineWidth=1.5;ctx.setLineDash([]);ctx.stroke();
+      }
+    } else {
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle=isDrv?'#f85149':'#c9d1d9';ctx.lineWidth=isDrv?4:3;ctx.stroke();
+    }
+    // length label
+    ctx.fillStyle='#8b949e';ctx.font='9px monospace';
+    ctx.fillText(lk.len.toFixed(0),(a.x+b.x)/2+3,(a.y+b.y)/2-3);
+  }
+
+  // link preview in link mode
+  if(tool==='link'&&lkStart!==null){
+    const sj=byId(lkStart);
+    if(sj){
+      const hj=hov&&hov!==lkStart?byId(hov):null;
+      ctx.beginPath();ctx.moveTo(sj.x,sj.y);ctx.lineTo(hj?hj.x:mx,hj?hj.y:my);
+      ctx.strokeStyle='rgba(88,166,255,.5)';ctx.lineWidth=2;
+      ctx.setLineDash([5,3]);ctx.stroke();ctx.setLineDash([]);
+    }
+  }
+
+  // joints
+  for(const j of J){
+    const isH=j.id===hov;
+    const col=j.type==='ground'?'#8b949e':j.id===drv?.pinId?'#f7931a':j.id===traceJid?'#f7931a':'#58a6ff';
+    if(j.type==='ground'){
+      ctx.beginPath();ctx.moveTo(j.x,j.y-11);ctx.lineTo(j.x-9,j.y+4);ctx.lineTo(j.x+9,j.y+4);ctx.closePath();
+      ctx.fillStyle=isH?'rgba(88,166,255,.15)':'#21262d';ctx.fill();
+      ctx.strokeStyle=isH?'#58a6ff':col;ctx.lineWidth=2;ctx.stroke();
+      gnd(j.x,j.y+4);
+    } else if(j.type==='slider'){
+      ctx.beginPath();ctx.rect(j.x-11,j.y-7,22,14);
+      ctx.fillStyle=isH?'rgba(88,166,255,.15)':'#21262d';ctx.fill();
+      ctx.strokeStyle=isH?'#58a6ff':col;ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.moveTo(j.x-18,j.y);ctx.lineTo(j.x-12,j.y);ctx.moveTo(j.x+12,j.y);ctx.lineTo(j.x+18,j.y);
+      ctx.strokeStyle='#8b949e';ctx.lineWidth=1.5;ctx.stroke();
+    } else {
+      ctx.beginPath();ctx.arc(j.x,j.y,isH?9:7,0,TAU);
+      ctx.fillStyle='#0d1117';ctx.fill();
+      ctx.strokeStyle=isH?'#58a6ff':col;ctx.lineWidth=isH?3:2.5;ctx.stroke();
+    }
+    ctx.fillStyle='#555';ctx.font='9px monospace';
+    ctx.fillText('#'+j.id,j.x+10,j.y-8);
+  }
+
+  // ghost preview for place tools
+  if((tool==='pin'||tool==='ground'||tool==='slider')&&!dragging){
+    ctx.beginPath();
+    if(tool==='ground'){ctx.moveTo(mx,my-11);ctx.lineTo(mx-9,my+4);ctx.lineTo(mx+9,my+4);ctx.closePath();}
+    else if(tool==='slider') ctx.rect(mx-11,my-7,22,14);
+    else ctx.arc(mx,my,7,0,TAU);
+    ctx.strokeStyle='rgba(88,166,255,.35)';ctx.lineWidth=2;ctx.setLineDash([3,2]);ctx.stroke();ctx.setLineDash([]);
+  }
+}
+
+// ── hit detection ─────────────────────────────────────────────────────────
+function hitJ(x,y,thr=15){let b=null,bd=thr;for(const j of J){const d=dist({x,y},j);if(d<bd){bd=d;b=j;}}return b;}
+function hitL(x,y,thr=8){
+  for(const lk of L){
+    const a=byId(lk.a),b=byId(lk.b); if(!a||!b) continue;
+    const dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy+1e-9;
+    const t=Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/d2));
+    if(Math.hypot(x-a.x-t*dx,y-a.y-t*dy)<thr) return lk;
+  }return null;
+}
+
+// ── mouse ─────────────────────────────────────────────────────────────────
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect(); mx=e.clientX-r.left;my=e.clientY-r.top;
+  const h=hitJ(mx,my); hov=h?h.id:null; hovGear=hitGear(mx,my);
+  if(dragging){
+    const j=byId(dragging);if(!j) return;
+    j.x=mx;j.y=my;
+    if(j.type==='ground'){j.ox=mx;j.oy=my;}
+    if(j.type==='slider'){j.oy=my;}
+    if(drv&&(j.id===drv.groundId||j.id===drv.pinId)){
+      const g=byId(drv.groundId),p=byId(drv.pinId);
+      if(g&&p) drv.radius=dist(g,p);
+    }
+    for(const lk of L){if(lk.a===j.id||lk.b===j.id){const a=byId(lk.a),b=byId(lk.b);if(a&&b)lk.len=dist(a,b);}}
+    tracePts=[];updatePanel();
+  }
+});
+
+cv.addEventListener('mousedown',e=>{
+  const r=cv.getBoundingClientRect(); const x=e.clientX-r.left,y=e.clientY-r.top;
+  const hj=hitJ(x,y);
+  if(tool==='move'){if(hj){dragging=hj.id;cv.style.cursor='grabbing';}return;}
+  if(tool==='ground'){if(!hj)addJ('ground',x,y);return;}
+  if(tool==='pin'){if(!hj)addJ('pin',x,y);return;}
+  if(tool==='slider'){if(!hj)addJ('slider',x,y);return;}
+  if(tool==='link'){
+    if(hj){
+      if(lkStart===null){lkStart=hj.id;}
+      else{addL(lkStart,hj.id);lkStart=null;}
+    } else if(lkStart!==null){
+      const nj=addJ('pin',x,y);addL(lkStart,nj.id);lkStart=null;
+    }
+    return;
+  }
+  if(tool==='drive'){
+    const hl=hitL(x,y);
+    if(hl){setDrv(hl.id);return;}
+    const hg=hitGear(x,y);
+    if(hg){
+      // If this gear's pivot already has a link, drive via that link so the
+      // full constraint solver runs AND the gear train propagates from the same pivot.
+      const attached=L.find(l=>l.a===hg.jointId||l.b===hg.jointId);
+      if(attached){ setDrv(attached.id); }
+      else{
+        // Pure gear train — no links, use gear-only mode
+        drv={groundId:hg.jointId,pinId:null,radius:hg.r,gearMode:true};
+        animAngle=0;tracePts=[];updatePanel();
+      }
+    }
+    return;
+  }
+  if(tool==='invert'){
+    const hl=hitL(x,y); if(hl) invertLink(hl.id);
+    return;
+  }
+  if(tool==='gear'){
+    const hg=hitGear(x,y);
+    if(hg) return; // already a gear here
+    if(hj){
+      if(!gears.find(g=>g.jointId===hj.id)) gears.push({id:nid++,jointId:hj.id,r:40,angle:0});
+    } else {
+      const nj=addJ('ground',x,y); gears.push({id:nid++,jointId:nj.id,r:40,angle:0});
+    }
+    updatePanel(); return;
+  }
+  if(tool==='mesh'){
+    const hg=hitGear(x,y);
+    if(hg){
+      if(meshStart===null){ meshStart=hg.id; }
+      else {
+        if(meshStart!==hg.id&&!meshes.find(m=>(m.a===meshStart&&m.b===hg.id)||(m.a===hg.id&&m.b===meshStart)))
+          meshes.push({id:nid++,a:meshStart,b:hg.id});
+        meshStart=null;
+      }
+      updatePanel();
+    }
+    return;
+  }
+  if(tool==='delete'){
+    const hg=hitGear(x,y);
+    if(hg){
+      gears=gears.filter(g=>g.id!==hg.id);
+      meshes=meshes.filter(m=>m.a!==hg.id&&m.b!==hg.id);
+      updatePanel(); return;
+    }
+    if(hj){
+      J=J.filter(j=>j.id!==hj.id);
+      L=L.filter(l=>l.a!==hj.id&&l.b!==hj.id);
+      gears=gears.filter(g=>g.jointId!==hj.id);
+      if(drv&&(drv.groundId===hj.id||drv.pinId===hj.id))drv=null;
+      if(traceJid===hj.id){traceJid=null;tracePts=[];}
+    } else {
+      const hl=hitL(x,y);
+      if(hl){
+        L=L.filter(l=>l.id!==hl.id);
+        if(drv){const g=drv.groundId,p=drv.pinId;if(!L.find(l=>(l.a===g&&l.b===p)||(l.a===p&&l.b===g)))drv=null;}
+      }
+    }
+    tracePts=[];updatePanel();
+  }
+});
+cv.addEventListener('mouseup',()=>{dragging=null;cv.style.cursor=tool==='move'?'grab':'crosshair';});
+cv.addEventListener('dblclick',e=>{
+  const r=cv.getBoundingClientRect();
+  const hj=hitJ(e.clientX-r.left,e.clientY-r.top);
+  if(hj&&hj.type!=='ground'){
+    traceJid=traceJid===hj.id?null:hj.id;
+    tracePts=[];traceOn=traceJid!==null;
+    document.getElementById('traceBtn').classList.toggle('on',traceOn);
+    updatePanel();
+  }
+});
+
+// ── animation ─────────────────────────────────────────────────────────────
+function toggleAnim(){
+  if(!drv){alert('Set a driver first:\n• Link mechanism: Drive tool → click a link on a ground pivot\n• Gear train: Drive tool → click a gear');return;}
+  if(!drv.gearMode&&dof()!==0){alert(`DOF = ${dof()}. Mechanism needs DOF = 0 to animate.\n\nTip: add more links, or remove some to reach DOF = 0.`);return;}
+  animPaused=!animPaused;lt=null;
+  const btn=document.getElementById('animBtn');
+  btn.textContent=animPaused?'▶ Animate':'⏸ Pause';
+  btn.className='btn'+(animPaused?'':' green');
+}
+function toggleTrace(){
+  traceOn=!traceOn;tracePts=[];
+  if(traceOn&&!traceJid){const p=J.find(j=>j.type==='pin'&&j.id!==drv?.pinId);if(p)traceJid=p.id;}
+  document.getElementById('traceBtn').classList.toggle('on',traceOn);
+  updatePanel();
+}
+document.getElementById('spd').oninput=function(){animSpd=+this.value;document.getElementById('spdv').textContent=animSpd.toFixed(1)+'×';};
+
+// ── main loop ─────────────────────────────────────────────────────────────
+function frame(ts){
+  if(!lt) lt=ts;
+  const dt=Math.min((ts-lt)/1000,.05);lt=ts;
+  if(!animPaused&&drv){
+    animAngle+=dt*animSpd*1.5;
+    const ok=solve();
+    // propagate gear angles from driver gear outward via BFS
+    const dg=gears.find(g=>g.jointId===drv.groundId);
+    if(dg){
+      dg.angle=animAngle;
+      const vis=new Set([dg.id]),q=[dg];
+      while(q.length){
+        const g=q.shift();
+        for(const mesh of meshes){
+          const oid=mesh.a===g.id?mesh.b:mesh.b===g.id?mesh.a:null;
+          if(!oid||vis.has(oid)) continue;
+          vis.add(oid);
+          const og=gears.find(gr=>gr.id===oid);
+          if(og){og.angle=-g.angle*g.r/og.r;q.push(og);}
+        }
+      }
+    }
+    if(traceOn&&traceJid&&ok){
+      const tj=byId(traceJid);
+      if(tj){tracePts.push({x:tj.x,y:tj.y});if(tracePts.length>1200)tracePts.shift();}
+    }
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ── keyboard ─────────────────────────────────────────────────────────────
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT') return;
+  const m={g:'ground',p:'pin',s:'slider',l:'link',d:'drive',i:'invert',m:'move',x:'delete',r:'gear',e:'mesh'};
+  if(m[e.key.toLowerCase()]) T(m[e.key.toLowerCase()]);
+  if(e.key==='Escape') lkStart=null;
+  if(e.key===' '){e.preventDefault();toggleAnim();}
+});
+
+// ── presets ───────────────────────────────────────────────────────────────
+function preset(name){
+  clearAll();
+  const cx=cv.width/2, cy=cv.height/2;
+  if(name==='fourbar'){
+    const O2=addJ('ground',cx-110,cy), O4=addJ('ground',cx+110,cy);
+    const A=addJ('pin',cx-110+65,cy-55), B=addJ('pin',cx+15,cy-130);
+    addL(O2.id,A.id);addL(A.id,B.id);addL(B.id,O4.id);
+    setDrv(L[0].id);
+  } else if(name==='slider'){
+    const O=addJ('ground',cx-120,cy);
+    const A=addJ('pin',cx-120+75,cy-55);
+    const S=addJ('slider',cx+110,cy);
+    addL(O.id,A.id);addL(A.id,S.id);
+    setDrv(L[0].id);
+  } else if(name==='watt'){
+    // Watt's linkage: equal cranks, coupler = ground length → midpoint traces straight line
+    const r=80, ground=160;
+    const O2=addJ('ground',cx-ground/2,cy), O4=addJ('ground',cx+ground/2,cy);
+    const A=addJ('pin',cx-ground/2,cy-r);   // left crank end (directly above O2)
+    const B=addJ('pin',cx+ground/2,cy-r);   // right crank end (directly above O4)
+    const M=addJ('pin',cx,cy-r);            // midpoint of coupler → traces straight line
+    addL(O2.id,A.id);   // left crank
+    addL(O4.id,B.id);   // right crank
+    addL(A.id,M.id);    // half coupler left
+    addL(M.id,B.id);    // half coupler right
+    setDrv(L[0].id);
+    traceJid=M.id;traceOn=true;
+    document.getElementById('traceBtn').classList.add('on');
+    updatePanel();
+  } else if(name==='cheby'){
+    // Chebyshev linkage: ground=2a, cranks=a, coupler=2a → midpoint of coupler ≈ straight line
+    const a=90, ground=2*a;
+    const O2=addJ('ground',cx-ground/2,cy), O4=addJ('ground',cx+ground/2,cy);
+    const A=addJ('pin',cx-ground/2+a,cy-a*0.866); // crank end
+    const B=addJ('pin',cx+ground/2-a,cy-a*0.866); // follower end
+    const M=addJ('pin',(A.x+B.x)/2,(A.y+B.y)/2); // midpoint of coupler
+    addL(O2.id,A.id);  // crank
+    addL(O4.id,B.id);  // follower
+    addL(A.id,M.id);   // half coupler
+    addL(M.id,B.id);   // half coupler
+    setDrv(L[0].id);
+    traceJid=M.id;traceOn=true;
+    document.getElementById('traceBtn').classList.add('on');
+    updatePanel();
+  }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────
+T('pin');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
