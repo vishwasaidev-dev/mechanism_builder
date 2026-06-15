@@ -139,7 +139,7 @@ function addL(a,b){
   if(!ja||!jb) return;
   const len=dist(ja,jb);
   if(len<4) return;
-  L.push({id:nid++,a,b,len}); updatePanel();
+  L.push({id:nid++,a,b,len,spring:false,k:400}); updatePanel();
 }
 function setDrv(linkId){
   const lk=L.find(l=>l.id===linkId); if(!lk) return;
@@ -211,12 +211,28 @@ function drawGearShape(ctx,cx,cy,r,angle,accentColor,hovered){
   ctx.fillStyle='#555';ctx.font='9px monospace';ctx.fillText('r='+r.toFixed(0),cx+4,cy+3);
 }
 
-// mousewheel to resize gear
+// mousewheel — gear resize OR spring stiffness
 cv.addEventListener('wheel',e=>{
-  if(tool!=='gear') return;
-  const r=cv.getBoundingClientRect(),hg=hitGear(e.clientX-r.left,e.clientY-r.top);
-  if(hg){hg.r=Math.max(20,Math.min(160,hg.r-e.deltaY*.15));updatePanel();}
-  e.preventDefault();},{passive:false});
+  const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  if(tool==='gear'){
+    const hg=hitGear(x,y);
+    if(hg){hg.r=Math.max(20,Math.min(160,hg.r-e.deltaY*.15));updatePanel();}
+    e.preventDefault(); return;
+  }
+  const hl=hitL(x,y);
+  if(hl&&hl.spring){
+    hl.k=Math.max(10,Math.min(1000,hl.k+(e.deltaY<0?30:-30)));
+    updatePanel(); e.preventDefault();
+  }
+},{passive:false});
+
+// right-click a link to toggle rigid ↔ spring
+cv.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  const hl=hitL(x,y);
+  if(hl){hl.spring=!hl.spring;tracePts=[];updatePanel();}
+});
 
 function clearAll(){
   J=[];L=[];drv=null;gears=[];meshes=[];meshStart=null;tracePts=[];traceJid=null;traceOn=false;
@@ -265,7 +281,7 @@ const HINTS={
   ground:'<b>Ground pivot</b> — click to place a fixed pivot (frame). Use as crank centre or fixed follower pin.',
   pin:'<b>Pin joint</b> — click to place a moving revolute joint. Connect with links to constrain it.',
   slider:'<b>Slider</b> — moves horizontally only. Connect a link for slider-crank output.',
-  link:'<b>Link</b> — click joint A then joint B to create a rigid link. Click a joint then empty space to create joint+link.',
+  link:'<b>Link</b> — click joint A then joint B to create a rigid link. <b>Right-click</b> any link to toggle <b>rigid ↔ spring</b>. Scroll wheel over a spring to adjust stiffness (k). Spring color: green=rest, orange=stretched, blue=compressed.',
   drive:'<b>Drive</b> — click a <b>link</b> touching a ground pivot, or click a <b>gear</b>. If a gear shares its pivot with a link, the link mechanism and gear train both animate together.',
   invert:'<b>Invert</b> — click any link to make it the <b>ground (frame)</b>. Its endpoints freeze; previously-fixed joints release as pins. Tests all four inversions of a 4-bar without rebuilding.',
   move:'<b>Move</b> — drag any joint. Link lengths update automatically.',
@@ -297,8 +313,9 @@ function solve(){
       const e=(d-lk.len)/d;
       const wa=(a.type==='ground'||a.driven)?0:0.5;
       const wb=(b.type==='ground'||b.driven)?0:0.5;
-      if(wa){a.x+=wa*e*dx;a.y+=wa*e*dy;}
-      if(wb){b.x-=wb*e*dx;b.y-=wb*e*dy;}
+      const sf=lk.spring?Math.min(1,lk.k/1000):1; // springs apply partial correction
+      if(wa){a.x+=wa*e*dx*sf;a.y+=wa*e*dy*sf;}
+      if(wb){b.x-=wb*e*dx*sf;b.y-=wb*e*dy*sf;}
     }
     for(const j of J){
       if(j.type==='ground'){j.x=j.ox;j.y=j.oy;}
@@ -311,6 +328,24 @@ function solve(){
   let res=0;
   for(const lk of L){const a=byId(lk.a),b=byId(lk.b);if(a&&b)res+=Math.abs(dist(a,b)-lk.len);}
   return res<L.length*3;
+}
+
+// ── spring helper ─────────────────────────────────────────────────────────
+function drawSpring(x1,y1,x2,y2,color){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy); if(len<2) return;
+  const ux=dx/len,uy=dy/len,nx=-uy,ny=ux,amp=7,tail=10;
+  const coils=Math.max(3,Math.floor((len-2*tail)/16));
+  const bodyLen=Math.max(0,len-2*tail);
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x1+ux*tail,y1+uy*tail);
+  for(let i=0;i<=coils*2;i++){
+    const t=i/(coils*2);
+    const px=x1+ux*(tail+t*bodyLen),py=y1+uy*(tail+t*bodyLen);
+    ctx.lineTo(px+nx*amp*(i%2===0?1:-1),py+ny*amp*(i%2===0?1:-1));
+  }
+  ctx.lineTo(x2,y2);
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
 }
 
 // ── renderer ──────────────────────────────────────────────────────────────
@@ -380,13 +415,19 @@ function render(){
         ctx.lineTo(a.x+ux*t-uy*3,a.y+uy*t+ux*3);
         ctx.strokeStyle='#8b949e55';ctx.lineWidth=1.5;ctx.setLineDash([]);ctx.stroke();
       }
+    } else if(lk.spring){
+      const stretch=dist(a,b)-lk.len;
+      const col=isDrv?'#f85149':stretch>2?'#f7931a':stretch<-2?'#58b0ff':'#3fb950';
+      drawSpring(a.x,a.y,b.x,b.y,col);
+      ctx.fillStyle=col;ctx.font='9px monospace';
+      const sign=stretch>0?'+':'';
+      ctx.fillText('k='+lk.k+' Δ'+sign+stretch.toFixed(1),(a.x+b.x)/2+3,(a.y+b.y)/2-3);
     } else {
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
       ctx.strokeStyle=isDrv?'#f85149':'#c9d1d9';ctx.lineWidth=isDrv?4:3;ctx.stroke();
+      ctx.fillStyle='#8b949e';ctx.font='9px monospace';
+      ctx.fillText(lk.len.toFixed(0),(a.x+b.x)/2+3,(a.y+b.y)/2-3);
     }
-    // length label
-    ctx.fillStyle='#8b949e';ctx.font='9px monospace';
-    ctx.fillText(lk.len.toFixed(0),(a.x+b.x)/2+3,(a.y+b.y)/2-3);
   }
 
   // link preview in link mode
