@@ -300,9 +300,13 @@ function T(t){
 // ── solver ────────────────────────────────────────────────────────────────
 function solve(){
   if(!drv) return false;
-  if(drv.gearMode) return true; // pure gear train — no link constraints to solve
+  if(drv.gearMode) return true;
   const g=byId(drv.groundId),p=byId(drv.pinId);
   if(!g||!p) return false;
+
+  // Snapshot pin positions — restored if rigid links can't close
+  const snap=J.filter(j=>j.type==='pin').map(j=>({id:j.id,x:j.x,y:j.y}));
+
   p.driven=true;
   p.x=g.x+drv.radius*Math.cos(animAngle);
   p.y=g.y+drv.radius*Math.sin(animAngle);
@@ -313,7 +317,7 @@ function solve(){
       const e=(d-lk.len)/d;
       const wa=(a.type==='ground'||a.driven)?0:0.5;
       const wb=(b.type==='ground'||b.driven)?0:0.5;
-      const sf=lk.spring?Math.min(1,lk.k/1000):1; // springs apply partial correction
+      const sf=lk.spring?Math.min(1,lk.k/1000):1;
       if(wa){a.x+=wa*e*dx*sf;a.y+=wa*e*dy*sf;}
       if(wb){b.x-=wb*e*dx*sf;b.y-=wb*e*dy*sf;}
     }
@@ -325,9 +329,21 @@ function solve(){
     p.y=g.y+drv.radius*Math.sin(animAngle);
   }
   p.driven=false;
-  let res=0;
-  for(const lk of L){const a=byId(lk.a),b=byId(lk.b);if(a&&b)res+=Math.abs(dist(a,b)-lk.len);}
-  return res<L.length*3;
+
+  // Only check RIGID link errors — springs are allowed to stretch
+  let rigidErr=0, rigidN=0;
+  for(const lk of L){
+    if(lk.spring) continue;
+    const a=byId(lk.a),b=byId(lk.b);
+    if(a&&b){rigidErr+=Math.abs(dist(a,b)-lk.len);rigidN++;}
+  }
+  const ok=rigidN===0||rigidErr/rigidN<1.5; // 1.5 px avg tolerance per rigid link
+
+  if(!ok){
+    // Rollback — don't let rigid links deform
+    for(const s of snap){const j=byId(s.id);if(j){j.x=s.x;j.y=s.y;}}
+  }
+  return ok;
 }
 
 // ── spring helper ─────────────────────────────────────────────────────────
@@ -623,6 +639,15 @@ function frame(ts){
   if(!animPaused&&drv){
     animAngle+=dt*animSpd*1.5;
     const ok=solve();
+    if(!ok){
+      animAngle-=dt*animSpd*1.5; // undo crank advance
+      animPaused=true;
+      document.getElementById('animBtn').textContent='▶ Animate';
+      document.getElementById('animBtn').classList.remove('green');
+      document.getElementById('hint').innerHTML=
+        '<b style="color:#f85149">⛔ Mechanism locked</b> — rigid link cannot close at this crank angle. '+
+        'Adjust link proportions, or right-click a link to convert it to a spring.';
+    }
     // propagate gear angles from driver gear outward via BFS
     const dg=gears.find(g=>g.jointId===drv.groundId);
     if(dg){
